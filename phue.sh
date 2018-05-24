@@ -63,7 +63,16 @@ phue_username () {
 
 phue_bridge () {
   if [[ -n "${1:-}" ]] ; then
-    export PHUE_BRIDGE="$1"
+    shopt -s nocasematch
+    case "${1:-}" in
+      discover)
+        phue_bridge_discover
+        return $?
+        ;;
+      *)
+        export PHUE_BRIDGE="$1"
+        ;;
+    esac
   elif [[ -z "${PHUE_BRIDGE:-}" ]] ; then
     phue_read_credentials
   fi
@@ -81,38 +90,60 @@ phue_create_username () {
     "$(printf '{"devicetype":"%s#%s"}' "$app_name" "$device_name")"
 }
 
+phue_info () {
+  phue GET info "$@"
+}
+
+phue_capabilities () {
+  phue GET capabilities
+}
+
 phue () {
-  declare method="${1:-}"; shift
-
-  if [[ -z "${PHUE_BRIDGE:-}" ]] ; then
-    >&2 echo "Error; PHUE_BRIDGE is not defined!"
-    return 1
-  fi
-
-  if [[ -z "${PHUE_USERNAME:-}" \
-        && "${FUNCNAME[1]}" != "phue_create_username" ]] ; then
-    >&2 echo "Error; PHUE_USERNAME is not defined!"
-    return 1
-  fi
-
-  declare api_url="$(_phue_join "/" "https://${PHUE_BRIDGE:-}" api ${PHUE_USERNAME:-})"
-  declare query_url=""
-  declare query_body=""
-
+  declare cmd="${1:-}"; shift
   shopt -s nocasematch
-  case "$method" in
-    GET|DELETE)
-      query_url="$(_phue_join "/" "$api_url" "$@")"
-      _phue_curl -X "$method" "$query_url"
-      ;;
-    PUT|POST)
-      query_body="${1:-}"; shift
-      query_url="$(_phue_join "/" "$api_url" "$@")"
-      _phue_curl -X "$method" --data "$query_body" "$query_url"
-      ;;
+
+  case "$cmd" in
+    # Perform basic despatching first.
+    bridge_discover) phue_bridge discover ;;
+    bridge) phue_bridge "$@" ;;
+    username) phue_username "$@" ;;
+    register|link|create_username) phue_create_username "$@" ;;
+    info) phue_info "$@" ;;
+    capabilities) phue_capabilities "$@" ;;
+    lights|light) phue_lights "$@" ;;
+    on|off|hue|bri|sat|ct|transitiontime|bri_inc|sat_inc|hue_inc|ct_inc|xy|alert|effect|xy_inc|state) phue_lights "$cmd" "$@" ;;
+
     *)
-      >&2 echo "Unknown method ${method}"
-      ;;
+      # Validate global variables required for JSON REST RPC.
+      if [[ -z "${PHUE_BRIDGE:-}" ]] ; then
+        >&2 echo "Error; PHUE_BRIDGE is not defined!"
+        return 1
+      fi
+      if [[ -z "${PHUE_USERNAME:-}" \
+            && "${FUNCNAME[1]}" != "phue_create_username" ]] ; then
+        >&2 echo "Error; PHUE_USERNAME is not defined!"
+        return 1
+      fi
+      
+      declare query_url=""
+      declare query_body=""
+      declare api_url="$(_phue_join "/" \
+        "https://${PHUE_BRIDGE:-}" api ${PHUE_USERNAME:-})"
+      
+      case "$cmd" in
+        GET|DELETE)
+          query_url="$(_phue_join "/" "$api_url" "$@")"
+          _phue_curl -X "$cmd" "$query_url"
+          ;;
+        PUT|POST)
+          query_body="${1:-}"; shift
+          query_url="$(_phue_join "/" "$api_url" "$@")"
+          _phue_curl -X "$cmd" --data "$query_body" "$query_url"
+          ;;
+        *)
+          >&2 echo "Unknown command ${cmd}"
+          ;;
+      esac
   esac
 }
 
@@ -135,6 +166,10 @@ phue_lights () {
   shopt -s nocasematch
 
   case "$method" in
+    list)
+      phue_lights | jq -r '.|to_entries[]|.key + "\t" + .value.name'
+      ;;
+
     get|"")
       # GET  /api/<username>/lights       Get all lights
       # GET  /api/<username>/lights/<id>  Get light attributes and state
@@ -204,8 +239,62 @@ phue_lights () {
       ;;
 
     *)
-      >&2 echo "Error; unknown method '$method'!"
+      >&2 echo "Error; unknown command argument '$method'!"
       return 1
       ;;
   esac
 }
+
+_phue_help () {
+  echo "Syntax: phue <command> [arguments] [light-id...n]"
+  echo ""
+  echo "Commands: bridge, register, username, lights, info, capabilities."
+  #echo "Commands: lights, groups, schedules, scenes, sensors, rules,"
+  #echo "          configuration, info, resourcelinks, capabilities."
+  echo ""
+
+  if [[ $# -ge 1 ]] ; then
+    declare note=""
+    for note in "$@" ; do
+      echo "$note"
+    done
+    echo ""
+  fi
+
+  echo "See https://github.com/neechbear/bash_phue for help."
+}
+
+_phue_main () {
+  declare arg=""
+  for arg in "$@" ; do
+    case "$arg" in
+      --help|-h|-?)
+        # Display some command line help.
+        _phue_help
+        return $?
+        ;;
+    esac
+  done
+
+  # Check and load configuration.
+  phue_bridge >/dev/null
+  if [[ -z "${PHUE_BRIDGE:-}" \
+        && "$*" != "bridge discover"
+        && "$*" != "bridge_discover" ]] ; then
+    _phue_help \
+      "Environment variable PHUE_BRIDGE and PHUE_USERNAME are unset." \
+      "Set PHUE_BRIDGE or try '$0 bridge discover'."
+    return 1
+  fi
+
+  # Passthrough to phue function.
+  phue "$@"
+}
+
+_phue_is_sourced () {
+  [[ "${FUNCNAME[1]}" == "source" ]]
+}
+
+if ! _phue_is_sourced ; then
+  _phue_main "$@"
+fi

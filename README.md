@@ -7,9 +7,15 @@ https://developers.meethue.com/philips-hue-api
 
 This software is in the early stages of development.
 
+## Installation
+
+    make build
+    make install
+
 ## Example
 
-See [demo.sh](demo.sh) for more detailed example.
+`phue.sh` may be incorporated into your own shell scripts using `source`. See
+[demo.sh](demo.sh) for more detailed example.
 
     #!/usr/bin/env bash
     set -Eeuo pipefail
@@ -21,6 +27,18 @@ See [demo.sh](demo.sh) for more detailed example.
     phue_lights hue 10000 1 2
     phue_lights sat 255 1 2 3
     phue_lights alert lselect 2
+
+Alternatively `phue.sh` may be installed as a stand-alone script and used
+directly from the command line.
+
+    phue lights list
+    phue lights
+    phue lights off 1 2 3
+    phue lights on 7 8
+    phue lights bri 255 7 8
+    phue lights hue 20000 7
+    phue lights sat 255 7
+    phue lights alert lselect 3
 
 ## Requirements
 

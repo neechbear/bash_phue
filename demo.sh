@@ -65,7 +65,7 @@ main () {
 
   # Select a light(s) to demonstrate on.
   declare -a test_lights=("$@")
-  if [[ ${#test_lights} -eq 0 ]] ; then
+  if [[ ${#test_lights[@]} -eq 0 ]] ; then
     test_lights+=(1)
   fi
 
