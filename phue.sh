@@ -288,7 +288,11 @@ _phue_main () {
   fi
 
   # Passthrough to phue function.
-  phue "$@"
+  if [[ $# -le 0 ]] && type -P jq >/dev/null ; then
+    phue lights list
+  else
+    phue "$@"
+  fi
 }
 
 _phue_is_sourced () {
